@@ -261,50 +261,6 @@ function extractRSSEvents(rssXml: string, sourceUrl: string, sourceName: string,
   }
 }
 
-// Generate sample events if no real data is available (for demo purposes)
-function generateSampleEvents(startDate: Date, endDate: Date, location: string): PotentialEvent[] {
-  const sampleEvents = [
-    {
-      title: "Loudoun County Wine & Food Festival",
-      description: "Annual celebration featuring local wineries, craft breweries, and artisan food vendors. Perfect opportunity for wine tourism and local partnerships.",
-      link: "https://visitloudoun.org/events/wine-food-festival",
-      published: new Date().toISOString(),
-      source_name: "Visit Loudoun",
-      source_url: "https://visitloudoun.org",
-      event_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      location: location
-    },
-    {
-      title: "Fall Harvest Market at Historic Downtown",
-      description: "Weekly farmers market featuring local produce, artisan goods, and live music. Great venue for wine tastings and community engagement.",
-      link: "https://example.com/harvest-market",
-      published: new Date().toISOString(),
-      source_name: "Local Events",
-      source_url: "https://example.com",
-      event_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      location: location
-    },
-    {
-      title: "Virginia Wine Month Celebration",
-      description: "Statewide celebration of Virginia wines with special events, tastings, and promotions throughout the month.",
-      link: "https://virginiawine.org/wine-month",
-      published: new Date().toISOString(),
-      source_name: "Virginia Wine",
-      source_url: "https://virginiawine.org",
-      event_date: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
-      location: "Virginia"
-    }
-  ];
-
-  // Filter events by date range
-  return sampleEvents.filter(event => {
-    if (event.event_date) {
-      return isEventInDateRange(event.event_date, startDate, endDate);
-    }
-    return true;
-  });
-}
-
 serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") {
@@ -429,26 +385,27 @@ serve(async (req: Request) => {
         console.log('ℹ️ No raw data found, generating sample events for demo');
         dataSource = 'sample_events';
         
-        // Get winery location for sample events
-        let wineryLocation = 'Virginia';
-        if (requestBody.winery_id) {
-          try {
-            const { data: wineryData } = await supabase
-              .from('winery_profiles')
-              .select('location')
-              .eq('id', requestBody.winery_id)
-              .single();
-            
-            if (wineryData?.location) {
-              wineryLocation = wineryData.location;
-            }
-          } catch (error) {
-            console.log('Could not fetch winery location, using default');
+        // Generate sample events for demo (only if no real data)
+        allPotentialEvents = [
+          {
+            title: "Loudoun County Wine & Food Festival",
+            description: "Annual celebration featuring local wineries, craft breweries, and artisan food vendors. Perfect opportunity for wine tourism and local partnerships.",
+            link: "https://visitloudoun.org/events/wine-food-festival",
+            published: new Date().toISOString(),
+            source_name: "Visit Loudoun",
+            source_url: "https://visitloudoun.org",
+            event_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            title: "Fall Harvest Market at Historic Downtown",
+            description: "Weekly farmers market featuring local produce, artisan goods, and live music. Great venue for wine tastings and community engagement.",
+            link: "https://example.com/harvest-market",
+            published: new Date().toISOString(),
+            source_name: "Local Events",
+            source_url: "https://example.com",
+            event_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
           }
-        }
-        
-        // Generate sample events for demo
-        allPotentialEvents = generateSampleEvents(startDate, endDate, wineryLocation);
+        ];
       }
     }
 
@@ -474,7 +431,7 @@ serve(async (req: Request) => {
       });
     }
 
-    // --- Step 3: AI Gatekeeper to Filter Out Competitor Events ---
+    // --- AI Gatekeeper to Filter Out Competitor Events ---
     console.log('🛡️ Running AI GATEKEEPER to filter out competitor events...');
     
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -576,7 +533,7 @@ ${JSON.stringify(allPotentialEvents)}`;
       });
     }
 
-    // --- Step 4: Enhanced Analysis of Filtered Events ---
+    // --- Enhanced Analysis of Filtered Events ---
     console.log('🤖 Running enhanced analysis on filtered non-competitor events...');
     
     let finalEvents: FilteredEvent[] = [];
@@ -709,7 +666,7 @@ ${JSON.stringify(filteredEvents)}`;
       });
     }
 
-    // --- Step 5: Create Research Briefs for Final Events ---
+    // --- Create Research Briefs for Final Events ---
     console.log('📝 Creating research briefs for final filtered events...');
     
     const { data: wineries, error: wineriesError } = await supabase
