@@ -138,7 +138,8 @@ export default function EventEngine() {
         await fetchResearchBriefs(); // Refresh the list
         await fetchRawEventsCount(); // Refresh raw events count
       } else {
-        throw new Error(data?.error || 'Event scanning failed');
+        // Use the specific error message from the backend response
+        setError(data?.message || data?.error || 'Event scanning failed');
       }
     } catch (err) {
       console.error('Error scanning events:', err);
