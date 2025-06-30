@@ -25,7 +25,6 @@ interface ContentRequest {
 export default function EventEngine() {
   const { user } = useAuth();
   const [researchBriefs, setResearchBriefs] = useState<ResearchBrief[]>([]);
-  const [rawEventsCount, setRawEventsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
@@ -49,7 +48,6 @@ export default function EventEngine() {
     if (user) {
       fetchWineryProfile();
       fetchResearchBriefs();
-      fetchRawEventsCount();
     }
   }, [user]);
 
@@ -95,19 +93,6 @@ export default function EventEngine() {
     }
   };
 
-  const fetchRawEventsCount = async () => {
-    try {
-      const { count, error } = await supabase
-        .from('raw_events')
-        .select('*', { count: 'exact', head: true });
-
-      if (error) throw error;
-      setRawEventsCount(count || 0);
-    } catch (err) {
-      console.error('Error fetching raw events count:', err);
-    }
-  };
-
   const handleScanEvents = async () => {
     if (!wineryProfile) {
       setError('Please complete your winery profile first');
@@ -145,9 +130,8 @@ export default function EventEngine() {
       if (data?.success) {
         setSuccess(`Event scan completed! Found ${data.events_final || 0} relevant events and created ${data.briefs_created || 0} research briefs.`);
         await fetchResearchBriefs(); // Refresh the list
-        await fetchRawEventsCount(); // Refresh raw events count
       } else {
-        // Handle the specific "no raw data" error differently
+        // Handle the specific "no raw data" error with better guidance
         if (data?.message && data.message.includes('No raw RSS data found')) {
           setError('Your Google Apps Script needs to run first to provide RSS data. Please run your Google Apps Script, then try scanning again.');
         } else {
@@ -414,7 +398,7 @@ export default function EventEngine() {
         </div>
       </div>
 
-      {/* Data Pipeline Status */}
+      {/* Google Apps Script Integration Status */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Database className="h-5 w-5 mr-2" />
@@ -513,10 +497,13 @@ export default function EventEngine() {
                 <p className="text-red-800 text-sm font-medium">How to fix this:</p>
                 <ol className="text-red-700 text-sm mt-1 list-decimal list-inside space-y-1">
                   <li>Go to your Google Apps Script project</li>
-                  <li>Run the <code>scanEventFeeds</code> function manually</li>
-                  <li>Wait for it to complete successfully</li>
+                  <li>Run the <code className="bg-red-200 px-1 rounded">scanEventFeeds</code> function manually</li>
+                  <li>Wait for it to complete successfully (check the logs)</li>
                   <li>Return here and click "Scan for Events" again</li>
                 </ol>
+                <p className="text-red-600 text-xs mt-2">
+                  💡 Your script fetches RSS data from Virginia event sources and sends it directly to the Event Engine
+                </p>
               </div>
             )}
           </div>
@@ -559,7 +546,7 @@ export default function EventEngine() {
                 <p className="text-blue-800 text-sm font-medium mb-2">Quick Setup:</p>
                 <ol className="text-blue-700 text-sm space-y-1 list-decimal list-inside">
                   <li>Go to your Google Apps Script project</li>
-                  <li>Run the <code>scanEventFeeds</code> function</li>
+                  <li>Run the <code className="bg-blue-200 px-1 rounded">scanEventFeeds</code> function</li>
                   <li>Wait for it to complete (check the logs)</li>
                   <li>Return here and click "Scan for Events"</li>
                   <li>You'll see real Virginia events with clickable URLs!</li>
