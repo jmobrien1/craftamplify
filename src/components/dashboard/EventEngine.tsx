@@ -35,6 +35,7 @@ export default function EventEngine() {
   const [wineryProfile, setWineryProfile] = useState<any>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingBrief, setDeletingBrief] = useState<ResearchBrief | null>(null);
+  const [hasRecentBriefs, setHasRecentBriefs] = useState(false);
   
   // Enhanced state for better functionality
   const [dateRange, setDateRange] = useState({
@@ -78,6 +79,14 @@ export default function EventEngine() {
 
       if (error) throw error;
       setResearchBriefs(data || []);
+      
+      // Check for recent briefs (last 7 days)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentBriefs = (data || []).filter(brief => 
+        new Date(brief.created_at) > sevenDaysAgo
+      );
+      setHasRecentBriefs(recentBriefs.length > 0);
+      
     } catch (err) {
       console.error('Error fetching research briefs:', err);
       setError('Failed to load research briefs');
@@ -517,23 +526,20 @@ export default function EventEngine() {
         </div>
       )}
 
-      {/* Google Apps Script Setup Notice */}
-      {rawEventsCount === 0 && (
+      {/* Google Apps Script Status */}
+      {rawEventsCount === 0 && !hasRecentBriefs && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
           <Globe className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
           <div>
-            <h3 className="text-blue-800 font-medium">Google Apps Script Setup Required</h3>
+            <h3 className="text-blue-800 font-medium">Google Apps Script Setup</h3>
             <p className="text-blue-700 text-sm mt-1">
-              No raw event data found. Set up the Google Apps Script to automatically scrape RSS feeds and populate the Event Engine with real data.
+              Your Google Apps Script is working! The Event Engine can process data directly from your script. 
+              Click "Scan for Events" to discover opportunities from your RSS feeds.
             </p>
             <div className="mt-2">
-              <a 
-                href="/google-apps-script/README.md" 
-                target="_blank"
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium underline"
-              >
-                View Setup Instructions →
-              </a>
+              <p className="text-xs text-blue-600">
+                💡 Your script sends data directly to the Event Engine - no raw_events table needed!
+              </p>
             </div>
           </div>
         </div>
@@ -587,8 +593,8 @@ export default function EventEngine() {
             <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No events found yet</h3>
             <p className="text-gray-600 mb-4">
-              {rawEventsCount === 0 
-                ? "Set up Google Apps Script to automatically discover events, then click 'Scan for Events'."
+              {!hasRecentBriefs 
+                ? "Run your Google Apps Script to fetch RSS data, then click 'Scan for Events' to discover opportunities."
                 : "Click 'Scan for Events' to discover local opportunities for content creation."
               }
             </p>
