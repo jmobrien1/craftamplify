@@ -28,6 +28,7 @@ export function ContentPipeline({ wineryProfile }: ContentPipelineProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingContent, setDeletingContent] = useState<any>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     if (wineryProfile) {
@@ -94,6 +95,31 @@ export function ContentPipeline({ wineryProfile }: ContentPipelineProps) {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!confirm('Are you sure you want to delete ALL content? This cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setBulkDeleting(true);
+      
+      const { error } = await supabase
+        .from('content_calendar')
+        .delete()
+        .eq('winery_id', wineryProfile.id);
+
+      if (error) throw error;
+      
+      setContent([]);
+      toast.success('All content deleted successfully');
+    } catch (error) {
+      console.error('Error deleting all content:', error);
+      toast.error('Failed to delete all content');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const openDeleteModal = (content: any) => {
     setDeletingContent(content);
     setShowDeleteModal(true);
@@ -149,16 +175,28 @@ export function ContentPipeline({ wineryProfile }: ContentPipelineProps) {
           <h1 className="text-2xl font-bold text-gray-900">Content Pipeline</h1>
           <p className="text-gray-600">Manage your content through the editorial workflow</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingContent(null);
-            setShowEditor(true);
-          }}
-          className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Content
-        </button>
+        <div className="flex items-center space-x-3">
+          {content.length > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {bulkDeleting ? 'Deleting All...' : 'Delete All Content'}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setEditingContent(null);
+              setShowEditor(true);
+            }}
+            className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Content
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

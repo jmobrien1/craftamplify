@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, MapPin, Clock, ExternalLink, Sparkles, AlertCircle, CheckCircle, RefreshCw, Zap, Settings, Filter, Calendar as CalendarIcon, Database, Globe } from 'lucide-react';
+import { Calendar, MapPin, Clock, ExternalLink, Sparkles, AlertCircle, CheckCircle, RefreshCw, Zap, Settings, Filter, Calendar as CalendarIcon, Database, Globe, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import toast from 'react-hot-toast';
 
 interface ResearchBrief {
   id: string;
@@ -28,9 +29,12 @@ export default function EventEngine() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [wineryProfile, setWineryProfile] = useState<any>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingBrief, setDeletingBrief] = useState<ResearchBrief | null>(null);
   
   // Enhanced state for better functionality
   const [dateRange, setDateRange] = useState({
@@ -233,6 +237,56 @@ export default function EventEngine() {
     }
   };
 
+  const handleDeleteBrief = async () => {
+    if (!deletingBrief) return;
+
+    try {
+      setDeleting(deletingBrief.id);
+      
+      const { error } = await supabase
+        .from('research_briefs')
+        .delete()
+        .eq('id', deletingBrief.id);
+
+      if (error) throw error;
+
+      setResearchBriefs(prev => prev.filter(brief => brief.id !== deletingBrief.id));
+      toast.success('Event opportunity deleted successfully');
+      setShowDeleteModal(false);
+      setDeletingBrief(null);
+    } catch (error) {
+      console.error('Error deleting research brief:', error);
+      toast.error('Failed to delete event opportunity');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleClearAllEvents = async () => {
+    if (!confirm('Are you sure you want to delete ALL event opportunities? This cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setDeleting('all');
+      
+      const { error } = await supabase
+        .from('research_briefs')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+      if (error) throw error;
+
+      setResearchBriefs([]);
+      toast.success('All event opportunities deleted successfully');
+    } catch (error) {
+      console.error('Error clearing all events:', error);
+      toast.error('Failed to clear all events');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Date TBD';
     try {
@@ -306,23 +360,44 @@ export default function EventEngine() {
             Discover local events and create relevant content opportunities
           </p>
         </div>
-        <button
-          onClick={handleScanEvents}
-          disabled={scanning || !wineryProfile}
-          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-        >
-          {scanning ? (
-            <>
-              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-              Scanning Events...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4 mr-2" />
-              Scan for Events
-            </>
+        <div className="flex items-center space-x-3">
+          {researchBriefs.length > 0 && (
+            <button
+              onClick={handleClearAllEvents}
+              disabled={deleting === 'all'}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              {deleting === 'all' ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  Clearing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Clear All Events
+                </>
+              )}
+            </button>
           )}
-        </button>
+          <button
+            onClick={handleScanEvents}
+            disabled={scanning || !wineryProfile}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            {scanning ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                Scanning Events...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Scan for Events
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Data Pipeline Status */}
@@ -415,17 +490,6 @@ export default function EventEngine() {
           <div>
             <h3 className="text-red-800 font-medium">Error</h3>
             <p className="text-red-700 text-sm mt-1">{error}</p>
-            {error.includes('Network error') && (
-              <div className="mt-2 text-xs text-red-600">
-                <p>Troubleshooting steps:</p>
-                <ol className="list-decimal list-inside mt-1 space-y-1">
-                  <li>Check your internet connection</li>
-                  <li>Refresh the page and try again</li>
-                  <li>Verify the Supabase project is running</li>
-                  <li>Check if Edge Functions are deployed in your Supabase dashboard</li>
-                </ol>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -623,6 +687,27 @@ export default function EventEngine() {
                           View Event
                         </button>
                       )}
+                      
+                      <button
+                        onClick={() => {
+                          setDeletingBrief(brief);
+                          setShowDeleteModal(true);
+                        }}
+                        disabled={deleting === brief.id}
+                        className="text-red-600 hover:text-red-700 flex items-center text-sm border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50"
+                      >
+                        {deleting === brief.id ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Delete
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -631,6 +716,54 @@ export default function EventEngine() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingBrief && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Event Opportunity</h3>
+                <p className="text-sm text-gray-600">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-sm text-gray-700 mb-2">
+                Are you sure you want to delete this event opportunity?
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="font-medium text-gray-900 text-sm">{deletingBrief.suggested_theme}</p>
+                {deletingBrief.local_event_name && (
+                  <p className="text-xs text-gray-600 mt-1">{deletingBrief.local_event_name}</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingBrief(null);
+                }}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteBrief}
+                disabled={deleting === deletingBrief.id}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting === deletingBrief.id ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

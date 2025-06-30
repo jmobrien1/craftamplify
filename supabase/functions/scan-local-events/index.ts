@@ -1,14 +1,14 @@
 /*
-  # FIXED EVENT ENGINE - WORKS WITH YOUR EXISTING GOOGLE APPS SCRIPT
+  # REAL EVENTS ONLY - FIXED EVENT ENGINE FOR ALL RSS SOURCES
 
-  This version is designed to work with your existing Google Apps Script that sends
-  data directly to scan-local-events with the raw_data payload structure.
+  This version processes REAL events from ALL 7+ RSS sources and eliminates demo/sample events.
   
-  ✅ Restores event URLs and links
-  ✅ Adds custom date range support  
   ✅ Works with your existing Google Apps Script
-  ✅ Better error handling and user feedback
-  ✅ Enhanced research brief creation with all details
+  ✅ Processes ALL RSS sources (not just visitloudoun.org)
+  ✅ NO demo/sample events - real events only
+  ✅ Preserves event URLs and links
+  ✅ Custom date range support
+  ✅ Enhanced RSS parsing for all feed formats
 */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -159,13 +159,13 @@ function isEventInDateRange(eventDateStr: string, startDate: Date, endDate: Date
   }
 }
 
-// Robust XML parser for RSS feeds (no external dependencies)
+// Enhanced XML parser for RSS feeds (handles all RSS formats)
 function parseXML(xmlString: string): any {
   try {
     const items: any[] = [];
     
-    // Extract all <item> blocks
-    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
+    // Extract all <item> blocks (RSS) and <entry> blocks (Atom)
+    const itemRegex = /<(?:item|entry)[^>]*>([\s\S]*?)<\/(?:item|entry)>/gi;
     let itemMatch;
     
     while ((itemMatch = itemRegex.exec(xmlString)) !== null) {
@@ -174,34 +174,44 @@ function parseXML(xmlString: string): any {
       // Extract fields from each item
       const item: any = {};
       
-      // Extract title
-      const titleMatch = itemContent.match(/<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/i);
+      // Extract title (handle CDATA)
+      const titleMatch = itemContent.match(/<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/is);
       if (titleMatch) {
         item.title = titleMatch[1].trim();
       }
       
-      // Extract description
-      const descMatch = itemContent.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
+      // Extract description/summary/content (handle CDATA)
+      const descMatch = itemContent.match(/<(?:description|summary|content)[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/(?:description|summary|content)>/is);
       if (descMatch) {
         item.description = descMatch[1].trim();
       }
       
-      // Extract link
-      const linkMatch = itemContent.match(/<link[^>]*>(.*?)<\/link>/i);
+      // Extract link (handle both RSS and Atom formats)
+      let linkMatch = itemContent.match(/<link[^>]*>([^<]*)<\/link>/i);
+      if (!linkMatch) {
+        // Try Atom format with href attribute
+        linkMatch = itemContent.match(/<link[^>]*href=["']([^"']*)/i);
+      }
       if (linkMatch) {
         item.link = linkMatch[1].trim();
       }
       
-      // Extract pubDate
-      const pubDateMatch = itemContent.match(/<pubDate[^>]*>(.*?)<\/pubDate>/i);
+      // Extract publication date (multiple formats)
+      const pubDateMatch = itemContent.match(/<(?:pubDate|published|updated)[^>]*>(.*?)<\/(?:pubDate|published|updated)>/i);
       if (pubDateMatch) {
         item.pubDate = pubDateMatch[1].trim();
       }
       
-      // Extract guid (alternative link)
+      // Extract guid as fallback link
       const guidMatch = itemContent.match(/<guid[^>]*>(.*?)<\/guid>/i);
       if (guidMatch && !item.link) {
         item.link = guidMatch[1].trim();
+      }
+      
+      // Extract category/tags
+      const categoryMatch = itemContent.match(/<category[^>]*>([^<]*)<\/category>/i);
+      if (categoryMatch) {
+        item.category = categoryMatch[1].trim();
       }
       
       items.push(item);
@@ -217,29 +227,56 @@ function parseXML(xmlString: string): any {
 // Enhanced RSS event extraction from Google Apps Script data
 function extractRSSEvents(rssXml: string, sourceUrl: string, sourceName: string, startDate: Date, endDate: Date): PotentialEvent[] {
   try {
-    console.log(`📰 Processing RSS data from ${sourceName}`);
+    console.log(`📰 Processing RSS data from ${sourceName} (${rssXml.length} chars)`);
     
     const parsedXML = parseXML(rssXml);
     const items = parsedXML.items || [];
     
+    console.log(`   Found ${items.length} items in RSS feed`);
+    
     const events: PotentialEvent[] = [];
     
     items.forEach((item: any, index: number) => {
-      if (index >= 100) return; // Limit for performance
+      if (index >= 200) return; // Increased limit for more events
       
-      // Clean up HTML entities and tags
-      const cleanTitle = (item.title || '').replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim();
-      const cleanDescription = (item.description || '').replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim();
+      // Clean up HTML entities and tags more thoroughly
+      const cleanTitle = (item.title || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&[^;]+;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+        
+      const cleanDescription = (item.description || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&[^;]+;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
       
-      if (cleanTitle && cleanTitle.length > 5) {
+      if (cleanTitle && cleanTitle.length > 5 && cleanTitle.length < 500) {
         // Try to extract event date
         const eventDate = extractEventDate(cleanTitle, cleanDescription, item.pubDate || '');
         
+        // Extract location from title or description
+        let location = '';
+        const locationPatterns = [
+          /(?:in|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?\s*(?:VA|Virginia|MD|Maryland|DC))/i,
+          /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?\s*(?:VA|Virginia|MD|Maryland|DC))/i
+        ];
+        
+        for (const pattern of locationPatterns) {
+          const match = `${cleanTitle} ${cleanDescription}`.match(pattern);
+          if (match) {
+            location = match[1].trim();
+            break;
+          }
+        }
+        
         const event: PotentialEvent = {
           title: cleanTitle,
-          description: cleanDescription,
+          description: cleanDescription.substring(0, 500), // Limit description length
           link: item.link || sourceUrl,
-          published: item.pubDate || '',
+          published: item.pubDate || new Date().toISOString(),
+          location: location || undefined,
           source_name: sourceName,
           source_url: sourceUrl,
           event_date: eventDate || undefined
@@ -252,7 +289,7 @@ function extractRSSEvents(rssXml: string, sourceUrl: string, sourceName: string,
       }
     });
     
-    console.log(`✅ Extracted ${events.length} events in date range from ${sourceName} RSS`);
+    console.log(`✅ Extracted ${events.length} events in date range from ${sourceName}`);
     return events;
     
   } catch (error) {
@@ -291,7 +328,7 @@ serve(async (req: Request) => {
       endDate.setMonth(endDate.getMonth() + 3);
     }
     
-    console.log(`🚀 FIXED EVENT ENGINE STARTING (Compatible with your Google Apps Script)`);
+    console.log(`🚀 REAL EVENTS ONLY - EVENT ENGINE STARTING`);
     console.log(`📅 Date range: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`);
     
     const supabase = createClient(
@@ -320,7 +357,13 @@ serve(async (req: Request) => {
             else if (rawDataItem.source_url.includes('visitfauquier')) sourceName = 'Visit Fauquier Events';
             else if (rawDataItem.source_url.includes('northernvirginiamag')) sourceName = 'Northern Virginia Magazine Events';
             else if (rawDataItem.source_url.includes('discoverclarkecounty')) sourceName = 'Discover Clarke County Events';
-            else sourceName = new URL(rawDataItem.source_url).hostname;
+            else {
+              try {
+                sourceName = new URL(rawDataItem.source_url).hostname;
+              } catch {
+                sourceName = 'Unknown Source';
+              }
+            }
           }
 
           console.log(`Processing: ${sourceName} (${rawDataItem.raw_content.length} chars)`);
@@ -382,30 +425,29 @@ serve(async (req: Request) => {
           }
         }
       } else {
-        console.log('ℹ️ No raw data found, generating sample events for demo');
-        dataSource = 'sample_events';
-        
-        // Generate sample events for demo (only if no real data)
-        allPotentialEvents = [
-          {
-            title: "Loudoun County Wine & Food Festival",
-            description: "Annual celebration featuring local wineries, craft breweries, and artisan food vendors. Perfect opportunity for wine tourism and local partnerships.",
-            link: "https://visitloudoun.org/events/wine-food-festival",
-            published: new Date().toISOString(),
-            source_name: "Visit Loudoun",
-            source_url: "https://visitloudoun.org",
-            event_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        console.log('❌ NO RAW DATA FOUND - Cannot generate real events without RSS data');
+        return new Response(JSON.stringify({
+          success: false,
+          message: "No raw RSS data found. Please run your Google Apps Script first to populate the Event Engine with real event data.",
+          data_source: 'no_data',
+          raw_sources_processed: 0,
+          events_extracted: 0,
+          events_after_gatekeeper: 0,
+          events_final: 0,
+          date_range: {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            duration_days: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
           },
-          {
-            title: "Fall Harvest Market at Historic Downtown",
-            description: "Weekly farmers market featuring local produce, artisan goods, and live music. Great venue for wine tastings and community engagement.",
-            link: "https://example.com/harvest-market",
-            published: new Date().toISOString(),
-            source_name: "Local Events",
-            source_url: "https://example.com",
-            event_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
-          }
-        ];
+          instructions: [
+            "1. Run your Google Apps Script to fetch RSS data",
+            "2. Wait for the script to complete successfully", 
+            "3. Return to Event Engine and click 'Scan for Events'",
+            "4. You will then see real events from all RSS sources"
+          ]
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
     }
 
@@ -415,7 +457,7 @@ serve(async (req: Request) => {
       console.log('ℹ️ No events found in the specified date range');
       return new Response(JSON.stringify({
         success: true,
-        message: "No events found in the specified date range",
+        message: "No events found in the specified date range from RSS sources",
         data_source: dataSource,
         raw_sources_processed: requestBody.raw_data?.length || 0,
         events_extracted: 0,
@@ -757,7 +799,7 @@ ${JSON.stringify(filteredEvents)}`;
       }
     }
 
-    console.log(`🎉 FIXED Event Engine completed successfully!`);
+    console.log(`🎉 REAL EVENTS ONLY Event Engine completed successfully!`);
     console.log(`📊 FINAL RESULTS:`);
     console.log(`   Data source: ${dataSource}`);
     console.log(`   Raw sources processed: ${requestBody.raw_data?.length || 0}`);
@@ -769,7 +811,7 @@ ${JSON.stringify(filteredEvents)}`;
 
     return new Response(JSON.stringify({
       success: true,
-      message: `FIXED Event Engine complete: processed ${finalEvents.length} non-competitor events from ${requestBody.raw_data?.length || 0} sources for ${wineries.length} wineries`,
+      message: `REAL EVENTS ONLY Event Engine complete: processed ${finalEvents.length} non-competitor events from ${requestBody.raw_data?.length || 0} sources for ${wineries.length} wineries`,
       data_source: dataSource,
       raw_sources_processed: requestBody.raw_data?.length || 0,
       events_extracted: allPotentialEvents.length,
@@ -802,7 +844,7 @@ ${JSON.stringify(filteredEvents)}`;
     });
 
   } catch (error) {
-    console.error('Error in FIXED scan-local-events function:', error);
+    console.error('Error in REAL EVENTS ONLY scan-local-events function:', error);
     return new Response(
       JSON.stringify({ 
         error: "Internal server error",
