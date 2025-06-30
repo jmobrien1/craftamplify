@@ -147,8 +147,12 @@ export default function EventEngine() {
         await fetchResearchBriefs(); // Refresh the list
         await fetchRawEventsCount(); // Refresh raw events count
       } else {
-        // Use the specific error message from the backend response
-        setError(data?.message || data?.error || 'Event scanning failed');
+        // Handle the specific "no raw data" error differently
+        if (data?.message && data.message.includes('No raw RSS data found')) {
+          setError('Your Google Apps Script needs to run first to provide RSS data. Please run your Google Apps Script, then try scanning again.');
+        } else {
+          setError(data?.message || data?.error || 'Event scanning failed');
+        }
       }
     } catch (err) {
       console.error('Error scanning events:', err);
@@ -414,28 +418,17 @@ export default function EventEngine() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Database className="h-5 w-5 mr-2" />
-          Data Pipeline Status
+          Google Apps Script Integration Status
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-blue-700">Raw Events</p>
-                <p className="text-2xl font-bold text-blue-900">{rawEventsCount}</p>
-                <p className="text-xs text-blue-600">From Google Apps Script</p>
+                <p className="text-sm font-medium text-blue-700">Research Briefs</p>
+                <p className="text-2xl font-bold text-blue-900">{researchBriefs.length}</p>
+                <p className="text-xs text-blue-600">Event opportunities found</p>
               </div>
-              <Globe className="h-8 w-8 text-blue-500" />
-            </div>
-          </div>
-          
-          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-purple-700">Research Briefs</p>
-                <p className="text-2xl font-bold text-purple-900">{researchBriefs.length}</p>
-                <p className="text-xs text-purple-600">AI-filtered opportunities</p>
-              </div>
-              <Sparkles className="h-8 w-8 text-purple-500" />
+              <Sparkles className="h-8 w-8 text-blue-500" />
             </div>
           </div>
           
@@ -449,6 +442,21 @@ export default function EventEngine() {
                 <p className="text-xs text-green-600">Direct event links</p>
               </div>
               <ExternalLink className="h-8 w-8 text-green-500" />
+            </div>
+          </div>
+          
+          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-purple-700">Recent Activity</p>
+                <p className="text-2xl font-bold text-purple-900">
+                  {hasRecentBriefs ? '✓' : '○'}
+                </p>
+                <p className="text-xs text-purple-600">
+                  {hasRecentBriefs ? 'Active this week' : 'No recent activity'}
+                </p>
+              </div>
+              <Globe className="h-8 w-8 text-purple-500" />
             </div>
           </div>
         </div>
@@ -500,6 +508,17 @@ export default function EventEngine() {
           <div>
             <h3 className="text-red-800 font-medium">Error</h3>
             <p className="text-red-700 text-sm mt-1">{error}</p>
+            {error.includes('Google Apps Script') && (
+              <div className="mt-3 p-3 bg-red-100 rounded-lg">
+                <p className="text-red-800 text-sm font-medium">How to fix this:</p>
+                <ol className="text-red-700 text-sm mt-1 list-decimal list-inside space-y-1">
+                  <li>Go to your Google Apps Script project</li>
+                  <li>Run the <code>scanEventFeeds</code> function manually</li>
+                  <li>Wait for it to complete successfully</li>
+                  <li>Return here and click "Scan for Events" again</li>
+                </ol>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -526,19 +545,28 @@ export default function EventEngine() {
         </div>
       )}
 
-      {/* Google Apps Script Status */}
-      {rawEventsCount === 0 && !hasRecentBriefs && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
-          <Globe className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
-          <div>
-            <h3 className="text-blue-800 font-medium">Google Apps Script Setup</h3>
-            <p className="text-blue-700 text-sm mt-1">
-              Your Google Apps Script is working! The Event Engine can process data directly from your script. 
-              Click "Scan for Events" to discover opportunities from your RSS feeds.
-            </p>
-            <div className="mt-2">
-              <p className="text-xs text-blue-600">
-                💡 Your script sends data directly to the Event Engine - no raw_events table needed!
+      {/* Google Apps Script Integration Guide */}
+      {!hasRecentBriefs && researchBriefs.length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <div className="flex items-start space-x-3">
+            <Globe className="h-6 w-6 text-blue-500 mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="text-blue-800 font-medium mb-2">Google Apps Script Integration</h3>
+              <p className="text-blue-700 text-sm mb-3">
+                Your Event Engine is ready! To get real Virginia event data, you need to run your Google Apps Script first.
+              </p>
+              <div className="bg-blue-100 rounded-lg p-4">
+                <p className="text-blue-800 text-sm font-medium mb-2">Quick Setup:</p>
+                <ol className="text-blue-700 text-sm space-y-1 list-decimal list-inside">
+                  <li>Go to your Google Apps Script project</li>
+                  <li>Run the <code>scanEventFeeds</code> function</li>
+                  <li>Wait for it to complete (check the logs)</li>
+                  <li>Return here and click "Scan for Events"</li>
+                  <li>You'll see real Virginia events with clickable URLs!</li>
+                </ol>
+              </div>
+              <p className="text-blue-600 text-xs mt-3">
+                💡 Your script fetches RSS data from 5+ Virginia event sources and sends it directly to the Event Engine
               </p>
             </div>
           </div>
