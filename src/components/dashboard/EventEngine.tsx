@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, MapPin, Clock, ExternalLink, Sparkles, AlertCircle, CheckCircle, RefreshCw, Zap, Settings, Filter, Calendar as CalendarIcon, Database, Globe, Trash2, X } from 'lucide-react';
+import { Calendar, MapPin, Clock, ExternalLink, Sparkles, AlertCircle, CheckCircle, RefreshCw, Zap, Settings, Filter, Calendar as CalendarIcon, Database, Globe, Trash2, X, Play, Pause } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -35,6 +35,7 @@ export default function EventEngine() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingBrief, setDeletingBrief] = useState<ResearchBrief | null>(null);
   const [hasRecentBriefs, setHasRecentBriefs] = useState(false);
+  const [automationStatus, setAutomationStatus] = useState<'unknown' | 'active' | 'inactive'>('unknown');
   
   // Enhanced state for better functionality
   const [dateRange, setDateRange] = useState({
@@ -48,6 +49,7 @@ export default function EventEngine() {
     if (user) {
       fetchWineryProfile();
       fetchResearchBriefs();
+      checkAutomationStatus();
     }
   }, [user]);
 
@@ -78,10 +80,10 @@ export default function EventEngine() {
       if (error) throw error;
       setResearchBriefs(data || []);
       
-      // Check for recent briefs (last 7 days)
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      // Check for recent briefs (last 24 hours)
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const recentBriefs = (data || []).filter(brief => 
-        new Date(brief.created_at) > sevenDaysAgo
+        new Date(brief.created_at) > oneDayAgo
       );
       setHasRecentBriefs(recentBriefs.length > 0);
       
@@ -90,6 +92,35 @@ export default function EventEngine() {
       setError('Failed to load research briefs');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkAutomationStatus = async () => {
+    try {
+      // Check for recent briefs to determine if automation is working
+      const { data, error } = await supabase
+        .from('research_briefs')
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const lastBrief = new Date(data[0].created_at);
+        const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+        
+        if (lastBrief > twoDaysAgo) {
+          setAutomationStatus('active');
+        } else {
+          setAutomationStatus('inactive');
+        }
+      } else {
+        setAutomationStatus('inactive');
+      }
+    } catch (err) {
+      console.error('Error checking automation status:', err);
+      setAutomationStatus('unknown');
     }
   };
 
@@ -128,12 +159,17 @@ export default function EventEngine() {
       const data = await response.json();
 
       if (data?.success) {
-        setSuccess(`Event scan completed! Found ${data.events_final || 0} relevant events and created ${data.briefs_created || 0} research briefs.`);
+        if (data.events_final > 0) {
+          setSuccess(`Event scan completed! Found ${data.events_final || 0} relevant events and created ${data.briefs_created || 0} research briefs.`);
+        } else {
+          setSuccess(`Event scan completed! No new events found in the specified date range. Your Google Apps Script may need to run first to fetch fresh RSS data.`);
+        }
         await fetchResearchBriefs(); // Refresh the list
+        await checkAutomationStatus(); // Update automation status
       } else {
         // Handle the specific "no raw data" error with better guidance
-        if (data?.message && data.message.includes('No raw RSS data found')) {
-          setError('Your Google Apps Script needs to run first to provide RSS data. Please run your Google Apps Script, then try scanning again.');
+        if (data?.message && (data.message.includes('No raw RSS data found') || data.message.includes('No raw data'))) {
+          setError('Your Google Apps Script needs to run to provide fresh RSS data. Since you have a daily trigger set up, this should happen automatically at 6 AM each day.');
         } else {
           setError(data?.message || data?.error || 'Event scanning failed');
         }
@@ -313,6 +349,28 @@ export default function EventEngine() {
     return null;
   };
 
+  const getAutomationStatusIcon = () => {
+    switch (automationStatus) {
+      case 'active':
+        return <Play className="h-5 w-5 text-green-500" />;
+      case 'inactive':
+        return <Pause className="h-5 w-5 text-yellow-500" />;
+      default:
+        return <RefreshCw className="h-5 w-5 text-gray-400" />;
+    }
+  };
+
+  const getAutomationStatusText = () => {
+    switch (automationStatus) {
+      case 'active':
+        return 'Active - Events discovered recently';
+      case 'inactive':
+        return 'Inactive - No recent events (may need manual trigger)';
+      default:
+        return 'Checking automation status...';
+    }
+  };
+
   const filteredAndSortedBriefs = researchBriefs
     .filter(brief => {
       if (filterType === 'all') return true;
@@ -355,7 +413,7 @@ export default function EventEngine() {
             Event Engine
           </h1>
           <p className="text-gray-600 mt-1">
-            Discover local events and create relevant content opportunities
+            Automated event discovery with Google Apps Script integration
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -398,19 +456,19 @@ export default function EventEngine() {
         </div>
       </div>
 
-      {/* Google Apps Script Integration Status */}
+      {/* Automation Status */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Database className="h-5 w-5 mr-2" />
-          Google Apps Script Integration Status
+          Google Apps Script Automation Status
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-blue-700">Research Briefs</p>
+                <p className="text-sm font-medium text-blue-700">Total Events</p>
                 <p className="text-2xl font-bold text-blue-900">{researchBriefs.length}</p>
-                <p className="text-xs text-blue-600">Event opportunities found</p>
+                <p className="text-xs text-blue-600">Event opportunities</p>
               </div>
               <Sparkles className="h-8 w-8 text-blue-500" />
             </div>
@@ -419,11 +477,11 @@ export default function EventEngine() {
           <div className="bg-green-50 rounded-lg p-4 border border-green-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-green-700">With Event URLs</p>
+                <p className="text-sm font-medium text-green-700">With URLs</p>
                 <p className="text-2xl font-bold text-green-900">
                   {researchBriefs.filter(brief => getEventUrl(brief)).length}
                 </p>
-                <p className="text-xs text-green-600">Direct event links</p>
+                <p className="text-xs text-green-600">Clickable links</p>
               </div>
               <ExternalLink className="h-8 w-8 text-green-500" />
             </div>
@@ -437,12 +495,57 @@ export default function EventEngine() {
                   {hasRecentBriefs ? '✓' : '○'}
                 </p>
                 <p className="text-xs text-purple-600">
-                  {hasRecentBriefs ? 'Active this week' : 'No recent activity'}
+                  {hasRecentBriefs ? 'Active today' : 'No recent activity'}
                 </p>
               </div>
               <Globe className="h-8 w-8 text-purple-500" />
             </div>
           </div>
+
+          <div className={`rounded-lg p-4 border ${
+            automationStatus === 'active' ? 'bg-green-50 border-green-200' :
+            automationStatus === 'inactive' ? 'bg-yellow-50 border-yellow-200' :
+            'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-sm font-medium ${
+                  automationStatus === 'active' ? 'text-green-700' :
+                  automationStatus === 'inactive' ? 'text-yellow-700' :
+                  'text-gray-700'
+                }`}>Automation</p>
+                <p className={`text-lg font-bold ${
+                  automationStatus === 'active' ? 'text-green-900' :
+                  automationStatus === 'inactive' ? 'text-yellow-900' :
+                  'text-gray-900'
+                }`}>
+                  {automationStatus === 'active' ? 'ON' : 
+                   automationStatus === 'inactive' ? 'OFF' : '?'}
+                </p>
+                <p className={`text-xs ${
+                  automationStatus === 'active' ? 'text-green-600' :
+                  automationStatus === 'inactive' ? 'text-yellow-600' :
+                  'text-gray-600'
+                }`}>
+                  {automationStatus === 'active' ? 'Working' : 
+                   automationStatus === 'inactive' ? 'Needs trigger' : 'Checking...'}
+                </p>
+              </div>
+              {getAutomationStatusIcon()}
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center space-x-2">
+            {getAutomationStatusIcon()}
+            <span className="text-sm font-medium text-gray-700">Status:</span>
+            <span className="text-sm text-gray-600">{getAutomationStatusText()}</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Your Google Apps Script is set to run daily at 6 AM. If no recent events are showing, 
+            you can manually trigger it or wait for the next scheduled run.
+          </p>
         </div>
       </div>
 
@@ -494,16 +597,16 @@ export default function EventEngine() {
             <p className="text-red-700 text-sm mt-1">{error}</p>
             {error.includes('Google Apps Script') && (
               <div className="mt-3 p-3 bg-red-100 rounded-lg">
-                <p className="text-red-800 text-sm font-medium">How to fix this:</p>
-                <ol className="text-red-700 text-sm mt-1 list-decimal list-inside space-y-1">
-                  <li>Go to your Google Apps Script project</li>
-                  <li>Run the <code className="bg-red-200 px-1 rounded">scanEventFeeds</code> function manually</li>
-                  <li>Wait for it to complete successfully (check the logs)</li>
-                  <li>Return here and click "Scan for Events" again</li>
-                </ol>
-                <p className="text-red-600 text-xs mt-2">
-                  💡 Your script fetches RSS data from Virginia event sources and sends it directly to the Event Engine
+                <p className="text-red-800 text-sm font-medium">Automated Solution:</p>
+                <p className="text-red-700 text-sm mt-1">
+                  Since you have a daily trigger set up, your Google Apps Script will automatically run at 6 AM each day. 
+                  You can also manually run it in Google Apps Script if you need fresh data immediately.
                 </p>
+                <div className="mt-2">
+                  <p className="text-red-600 text-xs">
+                    💡 Your automation is working - just wait for the next scheduled run or trigger it manually
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -532,29 +635,36 @@ export default function EventEngine() {
         </div>
       )}
 
-      {/* Google Apps Script Integration Guide */}
-      {!hasRecentBriefs && researchBriefs.length === 0 && (
+      {/* Automation Guide */}
+      {automationStatus === 'inactive' && researchBriefs.length === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
           <div className="flex items-start space-x-3">
             <Globe className="h-6 w-6 text-blue-500 mt-1 flex-shrink-0" />
             <div>
-              <h3 className="text-blue-800 font-medium mb-2">Google Apps Script Integration</h3>
+              <h3 className="text-blue-800 font-medium mb-2">Automated Event Discovery</h3>
               <p className="text-blue-700 text-sm mb-3">
-                Your Event Engine is ready! To get real Virginia event data, you need to run your Google Apps Script first.
+                Your Event Engine is ready for automated operation! Since you've set up a daily trigger, 
+                your Google Apps Script will automatically fetch fresh RSS data every morning at 6 AM.
               </p>
               <div className="bg-blue-100 rounded-lg p-4">
-                <p className="text-blue-800 text-sm font-medium mb-2">Quick Setup:</p>
+                <p className="text-blue-800 text-sm font-medium mb-2">How it works:</p>
                 <ol className="text-blue-700 text-sm space-y-1 list-decimal list-inside">
-                  <li>Go to your Google Apps Script project</li>
-                  <li>Run the <code className="bg-blue-200 px-1 rounded">scanEventFeeds</code> function</li>
-                  <li>Wait for it to complete (check the logs)</li>
-                  <li>Return here and click "Scan for Events"</li>
-                  <li>You'll see real Virginia events with clickable URLs!</li>
+                  <li>Google Apps Script runs automatically at 6 AM daily</li>
+                  <li>Fetches fresh RSS data from 5+ Virginia event sources</li>
+                  <li>Sends clean data directly to your Event Engine</li>
+                  <li>AI filters out competitor events automatically</li>
+                  <li>Creates research briefs for relevant opportunities</li>
+                  <li>You see real events with clickable URLs here!</li>
                 </ol>
               </div>
-              <p className="text-blue-600 text-xs mt-3">
-                💡 Your script fetches RSS data from 5+ Virginia event sources and sends it directly to the Event Engine
-              </p>
+              <div className="mt-3 flex items-center space-x-4">
+                <div className="text-blue-600 text-xs">
+                  ⏰ Next automatic run: Tomorrow at 6 AM
+                </div>
+                <div className="text-blue-600 text-xs">
+                  🔧 Manual trigger: Run your Google Apps Script anytime
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -606,11 +716,13 @@ export default function EventEngine() {
         {filteredAndSortedBriefs.length === 0 ? (
           <div className="text-center py-12 bg-gray-50 rounded-lg">
             <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No events found yet</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {automationStatus === 'active' ? 'No events in current filter' : 'Waiting for automated event discovery'}
+            </h3>
             <p className="text-gray-600 mb-4">
-              {!hasRecentBriefs 
-                ? "Run your Google Apps Script to fetch RSS data, then click 'Scan for Events' to discover opportunities."
-                : "Click 'Scan for Events' to discover local opportunities for content creation."
+              {automationStatus === 'active' 
+                ? "Try adjusting your filters or date range to see more events."
+                : "Your Google Apps Script will automatically discover events at 6 AM daily. You can also run it manually for immediate results."
               }
             </p>
           </div>
