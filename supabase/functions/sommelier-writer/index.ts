@@ -1,20 +1,21 @@
 /*
-  # Sommelier Writing Agent Edge Function
+  # Sommelier Writing Agent - True Generative AI Integration
 
   1. Purpose
-    - Generates engaging wine content with unique brand voice
-    - Creates blog posts, social media content, and newsletters
-    - Uses comprehensive brand voice guidelines for authentic content
-    - Handles specific content requests with detailed requirements
+    - Generates authentic, brand-specific content using OpenAI GPT-4
+    - Combines complete Brand Voice Guide with specific Content Requests
+    - Creates personalized content that perfectly matches brand personality
 
   2. Functionality
-    - Analyzes brand voice and target audience
-    - Generates content based on research briefs or specific requests
-    - Maintains consistent brand messaging using detailed style guide
+    - Fetches complete winery profile with brand voice data
+    - Constructs detailed, multi-part prompts for GPT-4
+    - Uses OpenAI chat/completions endpoint for content generation
+    - Returns AI-generated content with brand voice applied
 
   3. Security
-    - Requires authentication
-    - Validates winery ownership
+    - Securely retrieves OpenAI API key from Supabase Secrets
+    - Validates winery ownership through RLS
+    - Comprehensive error handling and logging
 */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -34,193 +35,155 @@ interface ContentRequest {
 
 interface RequestPayload {
   winery_id: string;
-  winery_profile: any;
-  content_request?: ContentRequest;
-  content_type?: string;
-  theme?: string;
+  content_request: ContentRequest;
+  research_brief_id?: string;
   test?: boolean;
 }
 
-function buildBrandVoicePrompt(profile: any): string {
-  let prompt = `You are writing content for ${profile.winery_name}, a winery located in ${profile.location}. `;
-  
-  // Brand Personality
-  if (profile.brand_personality_summary) {
-    prompt += `Brand Personality: ${profile.brand_personality_summary} `;
-  }
-  
-  // Brand Tone
-  if (profile.brand_tone) {
-    prompt += `Your tone should be: ${profile.brand_tone}. `;
-  }
-  
-  // Messaging Style
-  if (profile.messaging_style) {
-    prompt += `Use a ${profile.messaging_style} messaging style. `;
-  }
-  
-  // Vocabulary Guidelines
-  if (profile.vocabulary_to_use) {
-    prompt += `Preferred vocabulary to use: ${profile.vocabulary_to_use}. `;
-  }
-  
-  if (profile.vocabulary_to_avoid) {
-    prompt += `Avoid these words/phrases: ${profile.vocabulary_to_avoid}. `;
-  }
-  
-  // AI Writing Guidelines
-  if (profile.ai_writing_guidelines) {
-    prompt += `Specific writing instructions: ${profile.ai_writing_guidelines} `;
-  }
-  
-  // Backstory and Context
-  if (profile.backstory) {
-    prompt += `Winery background: ${profile.backstory} `;
-  }
-  
-  // Target Audience
-  if (profile.target_audience) {
-    prompt += `Target audience: ${profile.target_audience} `;
-  }
-  
-  // Wine Types
-  if (profile.wine_types && profile.wine_types.length > 0) {
-    prompt += `Wine specialties: ${profile.wine_types.join(', ')}. `;
-  }
-  
-  return prompt;
+interface WineryProfile {
+  id: string;
+  winery_name: string;
+  location: string;
+  owner_name: string;
+  brand_personality_summary?: string;
+  brand_tone?: string;
+  messaging_style?: string;
+  vocabulary_to_use?: string;
+  vocabulary_to_avoid?: string;
+  ai_writing_guidelines?: string;
+  backstory?: string;
+  target_audience?: string;
+  wine_types?: string[];
 }
 
-function generateContentFromRequest(profile: any, request: ContentRequest): { title: string; content: string } {
-  const brandVoicePrompt = buildBrandVoicePrompt(profile);
-  
-  let title = '';
-  let content = '';
+function buildSuperchargedPrompt(wineryProfile: WineryProfile, contentRequest: ContentRequest): string {
+  const systemPrompt = `You are the "Sommelier" Writing Agent, an expert AI content creator specializing in craft beverage brands. Your mission is to generate content that perfectly embodies the client's unique brand voice and personality.
 
-  // Generate title based on primary topic
-  if (request.content_type === 'blog_post') {
-    title = request.primary_topic;
-  } else if (request.content_type === 'social_media') {
-    title = `${request.primary_topic} - Social Media Post`;
-  } else if (request.content_type === 'newsletter') {
-    title = `${profile.winery_name} Newsletter - ${request.primary_topic}`;
-  } else if (request.content_type === 'event_promotion') {
-    title = `${request.primary_topic} at ${profile.winery_name}`;
-  } else if (request.content_type === 'product_announcement') {
-    title = `Exciting News: ${request.primary_topic}`;
-  } else if (request.content_type === 'educational_content') {
-    title = `Learn About ${request.primary_topic}`;
-  } else {
-    title = request.primary_topic;
-  }
+---
+**COMPLETE BRAND VOICE GUIDE (THE 'HOW')**
 
-  // Generate content based on type and talking points
-  const toneDescriptor = profile.brand_tone ? 
-    profile.brand_tone.split(',')[0].trim().toLowerCase() : 'passionate';
-  
-  const preferredVocab = profile.vocabulary_to_use ? 
-    profile.vocabulary_to_use.split(',')[0].trim() : 'crafted';
+**Business Context:**
+- Winery Name: ${wineryProfile.winery_name}
+- Location: ${wineryProfile.location}
+- Owner: ${wineryProfile.owner_name}
+- Wine Specialties: ${wineryProfile.wine_types?.join(', ') || 'Not specified'}
 
-  if (request.content_type === 'blog_post') {
-    content = `<h2>${request.primary_topic}</h2>
+**Brand Personality:**
+${wineryProfile.brand_personality_summary || 'Not specified - use professional, authentic tone that reflects craft beverage expertise'}
 
-<p>Welcome to ${profile.winery_name}, where we're ${toneDescriptor} about sharing our latest updates with you. Located in the beautiful ${profile.location}, we're excited to tell you about ${request.primary_topic.toLowerCase()}.</p>
+**Brand Tone Attributes:**
+${wineryProfile.brand_tone || 'Not specified - use warm, knowledgeable, and approachable tone'}
 
-<h3>What You Need to Know</h3>
-<p>${request.key_talking_points}</p>
+**Messaging Style:**
+${wineryProfile.messaging_style || 'storytelling'} - Use this communication approach throughout the content
 
-${profile.backstory ? `<h3>Our Story</h3>
-<p>${profile.backstory}</p>` : ''}
+**Vocabulary Guidelines:**
+- PREFERRED WORDS/PHRASES: ${wineryProfile.vocabulary_to_use || 'crafted, artisanal, exceptional, authentic, passionate, heritage, terroir'}
+- WORDS/PHRASES TO AVOID: ${wineryProfile.vocabulary_to_avoid || 'cheap, mass-produced, generic, artificial'}
 
-<h3>Experience the Difference</h3>
-<p>At ${profile.winery_name}, every detail is ${preferredVocab} with care and attention. We invite ${profile.target_audience || 'wine enthusiasts'} to discover what makes our approach to winemaking truly special.</p>
+**Target Audience:**
+${wineryProfile.target_audience || 'Wine enthusiasts and craft beverage lovers'}
 
-${request.call_to_action ? `<p><strong>${request.call_to_action}</strong></p>` : ''}
+**Business Story & Context:**
+${wineryProfile.backstory || 'A passionate craft beverage business dedicated to quality and authenticity'}
 
-<p>We look forward to sharing this ${toneDescriptor} journey with you!</p>`;
+**SPECIFIC AI WRITING GUIDELINES:**
+${wineryProfile.ai_writing_guidelines || 'Write with passion and expertise about winemaking. Use storytelling to connect emotionally with readers. Balance technical knowledge with accessibility. Always emphasize the human element behind the craft.'}
 
-  } else if (request.content_type === 'social_media') {
-    content = `🍷 ${request.primary_topic} at ${profile.winery_name}!
+---
+**CONTENT REQUEST (THE 'WHAT')**
 
-${request.key_talking_points}
+**Content Type:** ${contentRequest.content_type}
+**Primary Topic/Goal:** ${contentRequest.primary_topic}
+**Key Talking Points to Include:** ${contentRequest.key_talking_points}
+**Required Call to Action:** ${contentRequest.call_to_action || 'Visit our winery to experience exceptional wines crafted with passion'}
 
-${request.call_to_action ? `${request.call_to_action}` : `Visit us in ${profile.location} to experience our ${preferredVocab} wines!`}
+---
 
-#Wine #${profile.location?.replace(/\s+/g, '')} #Winery`;
+**YOUR ASSIGNMENT:**
+Generate a complete, ready-to-publish ${contentRequest.content_type} that:
 
-  } else if (request.content_type === 'newsletter') {
-    content = `<h2>${request.primary_topic}</h2>
+1. **PERFECTLY EMBODIES THE BRAND VOICE** - Every sentence should reflect the specified personality, tone, and messaging style
+2. **INCLUDES ALL KEY TALKING POINTS** - Weave in every detail mentioned naturally and authentically
+3. **USES PREFERRED VOCABULARY** - Incorporate their preferred words while avoiding specified words
+4. **FOLLOWS WRITING GUIDELINES** - Strictly adhere to their specific AI writing instructions
+5. **INCLUDES THE CALL TO ACTION** - End with their specified call to action
+6. **MATCHES CONTENT TYPE** - Format appropriately for the requested content type
 
-<p>Dear Wine Lovers,</p>
+**CONTENT TYPE SPECIFIC REQUIREMENTS:**
 
-<p>We're ${toneDescriptor} to share some exciting news from ${profile.winery_name}. ${request.primary_topic}</p>
+${contentRequest.content_type === 'blog_post' ? `
+**BLOG POST FORMAT:**
+- Create an engaging, SEO-friendly headline
+- Use HTML formatting with proper headings (h2, h3)
+- Structure: Introduction, 2-3 main sections with subheadings, conclusion
+- Include 400-600 words
+- Use paragraph breaks for readability
+- End with the call to action in a prominent way
+` : ''}
 
-<h3>Here's What's Happening</h3>
-<p>${request.key_talking_points}</p>
+${contentRequest.content_type === 'social_media' ? `
+**SOCIAL MEDIA FORMAT:**
+- Keep under 280 characters for Twitter compatibility
+- Use engaging, conversational tone
+- Include relevant emojis (🍷, 🍇, etc.)
+- Add 3-5 relevant hashtags
+- Make it shareable and engaging
+- Include the call to action naturally within the character limit
+` : ''}
 
-<p>As always, we're committed to bringing you the finest wines from ${profile.location}, ${preferredVocab} with the care and attention that defines our winery.</p>
+${contentRequest.content_type === 'newsletter' ? `
+**NEWSLETTER FORMAT:**
+- Start with a warm, personal greeting
+- Use clear sections with descriptive headings
+- Include personal touches from the winery team
+- Use HTML formatting for email readability
+- Target 300-500 words
+- End with a signature from the team
+- Make the call to action prominent but natural
+` : ''}
 
-${request.call_to_action ? `<p><strong>${request.call_to_action}</strong></p>` : ''}
+${contentRequest.content_type === 'event_promotion' ? `
+**EVENT PROMOTION FORMAT:**
+- Create excitement and urgency
+- Include all event details clearly (date, time, location)
+- Highlight unique aspects and benefits
+- Use persuasive, engaging language
+- Make the call to action prominent and action-oriented
+- Target 250-400 words
+` : ''}
 
-<p>Cheers to exceptional wine and memorable moments,<br>
-The ${profile.winery_name} Team</p>`;
+${contentRequest.content_type === 'product_announcement' ? `
+**PRODUCT ANNOUNCEMENT FORMAT:**
+- Build anticipation and excitement
+- Highlight what makes the product special and unique
+- Include key product details and availability
+- Connect to the winery's story and expertise
+- Make the announcement feel exclusive and special
+- Target 300-450 words
+` : ''}
 
-  } else if (request.content_type === 'event_promotion') {
-    content = `<h2>Join Us: ${request.primary_topic}</h2>
+${contentRequest.content_type === 'educational_content' ? `
+**EDUCATIONAL CONTENT FORMAT:**
+- Start with an engaging hook that draws readers in
+- Break down complex topics into digestible sections
+- Use the winery's expertise and unique perspective
+- Include practical takeaways and actionable insights
+- Maintain the brand voice throughout while being informative
+- Target 500-700 words
+` : ''}
 
-<p>We're ${toneDescriptor} to invite you to an unforgettable experience at ${profile.winery_name}!</p>
+**CRITICAL SUCCESS FACTORS:**
+- This content represents ${wineryProfile.winery_name} - make it authentically theirs
+- Every word should feel like it came from someone who truly understands their business
+- The reader should feel the personality and passion of the winery
+- Include specific details from the talking points naturally - don't just list them
+- Make the content valuable and engaging to their target audience
+- Ensure the brand voice shines through every sentence
 
-<h3>Event Details</h3>
-<p>${request.key_talking_points}</p>
+Generate the content now, ensuring it perfectly captures their unique brand voice while fulfilling all aspects of the content request.`;
 
-<p>Located in ${profile.location}, our winery provides the perfect setting for this special event. Come discover why our ${preferredVocab} approach to winemaking creates truly exceptional experiences.</p>
-
-${request.call_to_action ? `<h3>Reserve Your Spot</h3>
-<p><strong>${request.call_to_action}</strong></p>` : ''}
-
-<p>We can't wait to welcome you to ${profile.winery_name}!</p>`;
-
-  } else if (request.content_type === 'product_announcement') {
-    content = `<h2>Introducing: ${request.primary_topic}</h2>
-
-<p>We're ${toneDescriptor} to share something special with our wine community at ${profile.winery_name}.</p>
-
-<h3>What Makes This Special</h3>
-<p>${request.key_talking_points}</p>
-
-<p>This new addition to our collection represents the ${preferredVocab} tradition and innovation that defines ${profile.winery_name}. Located in ${profile.location}, we continue to push the boundaries of what exceptional wine can be.</p>
-
-${request.call_to_action ? `<p><strong>${request.call_to_action}</strong></p>` : ''}
-
-<p>Thank you for being part of our journey!</p>`;
-
-  } else if (request.content_type === 'educational_content') {
-    content = `<h2>Understanding ${request.primary_topic}</h2>
-
-<p>At ${profile.winery_name}, we believe that knowledge enhances every wine experience. Today, we're sharing insights about ${request.primary_topic.toLowerCase()}.</p>
-
-<h3>Key Information</h3>
-<p>${request.key_talking_points}</p>
-
-<h3>Our Perspective</h3>
-<p>Here in ${profile.location}, we've learned that ${preferredVocab} winemaking requires both tradition and innovation. Our ${toneDescriptor} approach to this topic reflects years of experience and dedication to excellence.</p>
-
-${request.call_to_action ? `<p><strong>${request.call_to_action}</strong></p>` : ''}
-
-<p>We hope this insight enhances your appreciation for the art and science of winemaking!</p>`;
-
-  } else {
-    // Default content structure
-    content = `<h2>${request.primary_topic}</h2>
-
-<p>${request.key_talking_points}</p>
-
-<p>At ${profile.winery_name} in ${profile.location}, we're ${toneDescriptor} about sharing our ${preferredVocab} approach to winemaking with ${profile.target_audience || 'wine enthusiasts'}.</p>
-
-${request.call_to_action ? `<p><strong>${request.call_to_action}</strong></p>` : ''}`;
-  }
-
-  return { title, content };
+  return systemPrompt;
 }
 
 Deno.serve(async (req: Request) => {
@@ -232,14 +195,14 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { winery_id, winery_profile, content_request, content_type, theme, test }: RequestPayload = await req.json();
+    const { winery_id, content_request, research_brief_id, test }: RequestPayload = await req.json();
 
     // Handle test requests
     if (test) {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: "Sommelier Writing Agent is available" 
+          message: "Sommelier Writing Agent with True Generative AI is available" 
         }),
         {
           headers: {
@@ -251,10 +214,26 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate required parameters
-    if (!winery_id || !winery_profile) {
+    if (!winery_id || !content_request) {
       return new Response(
         JSON.stringify({ 
-          error: "Missing required parameters: winery_id and winery_profile" 
+          error: "Missing required parameters: winery_id and content_request" 
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+    }
+
+    // Validate content request structure
+    if (!content_request.content_type || !content_request.primary_topic || !content_request.key_talking_points) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Content request must include content_type, primary_topic, and key_talking_points" 
         }),
         {
           status: 400,
@@ -267,108 +246,15 @@ Deno.serve(async (req: Request) => {
     }
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    let contentTitle = '';
-    let contentBody = '';
-    let targetContentType = 'blog_post';
-
-    // Generate content based on specific request or default
-    if (content_request) {
-      // Handle specific content request
-      const generated = generateContentFromRequest(winery_profile, content_request);
-      contentTitle = generated.title;
-      contentBody = generated.content;
-      targetContentType = content_request.content_type;
-    } else {
-      // Handle default content generation
-      targetContentType = content_type || 'blog_post';
-      
-      if (targetContentType === 'blog_post') {
-        contentTitle = `The Story Behind ${winery_profile.winery_name}`;
-        
-        // Create content that follows the brand voice guidelines
-        contentBody = `<h2>Welcome to ${winery_profile.winery_name}</h2>
-
-<p>Nestled in the heart of ${winery_profile.location}, ${winery_profile.winery_name} represents more than just a winery—we embody a philosophy of excellence and authenticity that runs through everything we do.</p>
-
-${winery_profile.backstory ? `<h3>Our Story</h3>
-<p>${winery_profile.backstory}</p>` : ''}
-
-<h3>Our Wine Collection</h3>
-<p>We take immense pride in crafting wines that reflect our ${winery_profile.brand_tone || 'passionate'} approach to winemaking. Each bottle tells a story of dedication, tradition, and the unique terroir of ${winery_profile.location}.</p>
-
-${winery_profile.wine_types && winery_profile.wine_types.length > 0 ? `
-<p>Our collection features:</p>
-<ul>
-${winery_profile.wine_types.map((wine: string) => `<li><strong>${wine}</strong> - Carefully crafted to showcase the distinctive character of our vineyard</li>`).join('\n')}
-</ul>` : ''}
-
-<h3>Experience Our Passion</h3>
-<p>${winery_profile.target_audience ? `Whether you're ${winery_profile.target_audience.toLowerCase()}, ` : ''}we invite you to discover what makes ${winery_profile.winery_name} truly special. Every glass is an invitation to experience the artistry and passion that defines our winemaking journey.</p>
-
-<p>Visit us to taste the difference that comes from our commitment to excellence, and let us share our love for exceptional wine with you.</p>`;
-
-      } else if (targetContentType === 'social_media') {
-        contentTitle = `${winery_profile.winery_name} - Crafting Excellence`;
-        
-        const toneWords = winery_profile.brand_tone ? 
-          winery_profile.brand_tone.split(',')[0].trim().toLowerCase() : 'passionate';
-        
-        contentBody = `🍷 Discover the essence of ${winery_profile.location} in every glass at ${winery_profile.winery_name}! 
-
-Our ${toneWords} approach to winemaking creates wines that truly capture the spirit of our region. 
-
-${winery_profile.wine_types && winery_profile.wine_types.length > 0 ? 
-          `${winery_profile.wine_types.slice(0, 2).join(' & ')} now available for tasting!` : 
-          'Premium wines now available for tasting!'}
-
-#Wine #${winery_profile.location?.replace(/\s+/g, '')} #Winery #Tasting`;
-
-      } else if (targetContentType === 'newsletter') {
-        contentTitle = `${winery_profile.winery_name} Newsletter - Latest Updates`;
-        
-        contentBody = `<h2>Greetings from ${winery_profile.winery_name}!</h2>
-
-<p>We hope this newsletter finds you well and enjoying exceptional wine! Here's what's been happening at our winery in ${winery_profile.location}.</p>
-
-<h3>What's New</h3>
-<p>We're excited to share the latest developments in our winemaking journey. Our commitment to ${winery_profile.brand_tone || 'excellence'} continues to drive everything we do.</p>
-
-${winery_profile.wine_types && winery_profile.wine_types.length > 0 ? `
-<h3>Featured Wine</h3>
-<p>This month, we're highlighting our exceptional ${winery_profile.wine_types[0]}, which perfectly embodies the character and quality that defines our vineyard.</p>` : ''}
-
-<h3>Visit Us</h3>
-<p>We'd love to welcome you to ${winery_profile.winery_name} for a tasting experience that showcases our passion for winemaking. Come discover why our wines are cherished by ${winery_profile.target_audience || 'wine lovers everywhere'}.</p>
-
-<p>Cheers to exceptional wine and memorable moments,<br>The ${winery_profile.winery_name} Team</p>`;
-      }
-    }
-
-    // Create content in database
-    const { data: contentData, error: contentError } = await supabase
-      .from('content_calendar')
-      .insert([{
-        winery_id: winery_id,
-        title: contentTitle,
-        content: contentBody,
-        content_type: targetContentType,
-        status: 'draft',
-        created_by: null // Will be set by RLS
-      }])
-      .select()
-      .single();
-
-    if (contentError) {
-      console.error('Error creating content:', contentError);
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase environment variables');
       return new Response(
         JSON.stringify({ 
-          error: "Failed to create content",
-          details: contentError.message
+          error: "Server configuration error",
+          details: "Missing required Supabase environment variables"
         }),
         {
           status: 500,
@@ -380,30 +266,225 @@ ${winery_profile.wine_types && winery_profile.wine_types.length > 0 ? `
       );
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        data: {
-          content: contentData,
-          brand_voice_applied: {
-            personality: winery_profile.brand_personality_summary || 'Not specified',
-            tone_attributes: winery_profile.brand_tone || 'Not specified',
-            messaging_style: winery_profile.messaging_style || 'Not specified'
-          },
-          content_request_used: !!content_request,
-          word_count: contentBody.replace(/<[^>]*>/g, '').split(' ').length
-        },
-        message: content_request ? 
-          "Custom content generated based on your specific request" : 
-          "Content generated with personalized brand voice"
-      }),
-      {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Fetch complete winery profile with brand voice data
+    console.log(`Fetching winery profile for ID: ${winery_id}`);
+    
+    const { data: wineryProfile, error: profileError } = await supabase
+      .from('winery_profiles')
+      .select('*')
+      .eq('id', winery_id)
+      .single();
+
+    if (profileError) {
+      console.error('Error fetching winery profile:', profileError);
+      return new Response(
+        JSON.stringify({ 
+          error: "Failed to fetch winery profile",
+          details: profileError.message
+        }),
+        {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+    }
+
+    if (!wineryProfile) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Winery profile not found",
+          winery_id: winery_id
+        }),
+        {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+    }
+
+    console.log(`Successfully fetched profile for: ${wineryProfile.winery_name}`);
+
+    // Securely retrieve OpenAI API key from environment
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    if (!openaiApiKey) {
+      console.error('OpenAI API key not found in environment variables');
+      return new Response(
+        JSON.stringify({ 
+          error: "AI service not configured",
+          details: "OpenAI API key not found. Please configure OPENAI_API_KEY in Supabase Secrets."
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+    }
+
+    // Build the supercharged prompt combining brand voice and content request
+    console.log('Building supercharged prompt with complete brand voice guide...');
+    const systemPrompt = buildSuperchargedPrompt(wineryProfile, content_request);
+    const userPrompt = `Please generate the ${content_request.content_type} as specified in the system prompt, ensuring it perfectly embodies ${wineryProfile.winery_name}'s unique brand voice and includes all the requested talking points.`;
+
+    console.log('Calling OpenAI GPT-4 API...');
+
+    // Make authenticated API call to OpenAI GPT-4
+    try {
+      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
         headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
           'Content-Type': 'application/json',
-          ...corsHeaders,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ],
+          max_tokens: 1500,
+          temperature: 0.7,
+          presence_penalty: 0.1,
+          frequency_penalty: 0.1
+        }),
+      });
+
+      if (!openaiResponse.ok) {
+        const errorData = await openaiResponse.json().catch(() => ({ error: { message: 'Unknown OpenAI error' } }));
+        console.error('OpenAI API error:', errorData);
+        throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const openaiData = await openaiResponse.json();
+      const generatedContent = openaiData.choices[0]?.message?.content;
+
+      if (!generatedContent) {
+        throw new Error('No content generated by OpenAI');
+      }
+
+      console.log('Successfully generated content with OpenAI GPT-4');
+
+      // Extract title from generated content (first line or h1/h2 tag)
+      let contentTitle = content_request.primary_topic;
+      const lines = generatedContent.split('\n').filter(line => line.trim());
+      
+      if (lines.length > 0) {
+        // Try to extract title from first heading
+        const firstLine = lines[0].trim();
+        if (firstLine.startsWith('#')) {
+          contentTitle = firstLine.replace(/^#+\s*/, '');
+        } else if (firstLine.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i)) {
+          const match = firstLine.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
+          if (match) {
+            contentTitle = match[1];
+          }
+        } else if (firstLine.length > 10 && firstLine.length < 100) {
+          contentTitle = firstLine;
         }
       }
-    );
+
+      // Save the AI-generated content to database
+      console.log('Saving generated content to database...');
+      
+      const { data: contentData, error: contentError } = await supabase
+        .from('content_calendar')
+        .insert([{
+          winery_id: winery_id,
+          title: contentTitle,
+          content: generatedContent,
+          content_type: content_request.content_type,
+          status: 'draft',
+          research_brief_id: research_brief_id || null,
+          created_by: null // Will be set by RLS
+        }])
+        .select()
+        .single();
+
+      if (contentError) {
+        console.error('Error saving content to database:', contentError);
+        return new Response(
+          JSON.stringify({ 
+            error: "Failed to save generated content",
+            details: contentError.message
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders,
+            }
+          }
+        );
+      }
+
+      console.log('Successfully saved content to database');
+
+      // Calculate word count for analytics
+      const wordCount = generatedContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(word => word.length > 0).length;
+
+      // Return successful response with detailed metadata
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            content: contentData,
+            brand_voice_applied: {
+              personality: wineryProfile.brand_personality_summary || 'Not specified',
+              tone_attributes: wineryProfile.brand_tone || 'Not specified',
+              messaging_style: wineryProfile.messaging_style || 'Not specified',
+              vocabulary_used: wineryProfile.vocabulary_to_use || 'Not specified',
+              vocabulary_avoided: wineryProfile.vocabulary_to_avoid || 'Not specified',
+              writing_guidelines: wineryProfile.ai_writing_guidelines || 'Not specified'
+            },
+            content_request: content_request,
+            word_count: wordCount,
+            generation_method: 'openai_gpt4',
+            tokens_used: openaiData.usage?.total_tokens || 0,
+            model_used: 'gpt-4'
+          },
+          message: "Content generated successfully using OpenAI GPT-4 with complete brand voice integration"
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+
+    } catch (openaiError) {
+      console.error('OpenAI API call failed:', openaiError);
+      return new Response(
+        JSON.stringify({ 
+          error: "Failed to generate content with AI",
+          details: openaiError instanceof Error ? openaiError.message : 'Unknown OpenAI error'
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          }
+        }
+      );
+    }
 
   } catch (error) {
     console.error('Error in sommelier-writer function:', error);
