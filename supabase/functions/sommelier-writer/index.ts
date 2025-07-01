@@ -5,15 +5,16 @@
     - Generates authentic, brand-specific content using OpenAI GPT-4
     - Combines complete Brand Voice Guide with specific Content Requests
     - Creates personalized content that perfectly matches brand personality
+    - Uses user's personal OpenAI API key when available
 
   2. Functionality
     - Fetches complete winery profile with brand voice data
     - Constructs detailed, multi-part prompts for GPT-4
     - Uses OpenAI chat/completions endpoint for content generation
-    - Returns AI-generated content with brand voice applied
+    - Prioritizes user's personal API key over system key
 
   3. Security
-    - Securely retrieves OpenAI API key from Supabase Secrets
+    - Securely retrieves OpenAI API key from user profile or system secrets
     - Validates winery ownership through RLS
     - Comprehensive error handling and logging
 */
@@ -54,6 +55,7 @@ interface WineryProfile {
   backstory?: string;
   target_audience?: string;
   wine_types?: string[];
+  openai_api_key?: string;
 }
 
 function buildSuperchargedPrompt(wineryProfile: WineryProfile, contentRequest: ContentRequest): string {
@@ -268,7 +270,7 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch complete winery profile with brand voice data
+    // Fetch complete winery profile with brand voice data and OpenAI API key
     console.log(`Fetching winery profile for ID: ${winery_id}`);
     
     const { data: wineryProfile, error: profileError } = await supabase
@@ -312,15 +314,22 @@ Deno.serve(async (req: Request) => {
 
     console.log(`Successfully fetched profile for: ${wineryProfile.winery_name}`);
 
-    // Securely retrieve OpenAI API key from environment
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    // Determine which OpenAI API key to use (user's personal key takes priority)
+    let openaiApiKey = wineryProfile.openai_api_key;
+    let apiKeySource = 'user_personal';
+
+    if (!openaiApiKey) {
+      // Fall back to system API key
+      openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+      apiKeySource = 'system_shared';
+    }
     
     if (!openaiApiKey) {
-      console.error('OpenAI API key not found in environment variables');
+      console.error('No OpenAI API key available (neither user personal nor system)');
       return new Response(
         JSON.stringify({ 
           error: "AI service not configured",
-          details: "OpenAI API key not found. Please configure OPENAI_API_KEY in Supabase Secrets."
+          details: "No OpenAI API key available. Please add your personal API key in Settings or contact support."
         }),
         {
           status: 500,
@@ -331,6 +340,8 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    console.log(`Using ${apiKeySource} OpenAI API key for content generation`);
 
     // Build the supercharged prompt combining brand voice and content request
     console.log('Building supercharged prompt with complete brand voice guide...');
@@ -369,6 +380,29 @@ Deno.serve(async (req: Request) => {
       if (!openaiResponse.ok) {
         const errorData = await openaiResponse.json().catch(() => ({ error: { message: 'Unknown OpenAI error' } }));
         console.error('OpenAI API error:', errorData);
+        
+        // Provide specific error messages for common issues
+        if (errorData.error?.code === 'insufficient_quota') {
+          const errorMessage = apiKeySource === 'user_personal' 
+            ? "Your personal OpenAI API key has insufficient quota. Please add credits to your OpenAI account or remove your API key to use the shared system key."
+            : "The system OpenAI API key has insufficient quota. Please add your personal OpenAI API key in Settings.";
+          
+          return new Response(
+            JSON.stringify({ 
+              error: "OpenAI quota exceeded",
+              details: errorMessage,
+              api_key_source: apiKeySource
+            }),
+            {
+              status: 402,
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders,
+              }
+            }
+          );
+        }
+        
         throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
       }
 
@@ -457,9 +491,10 @@ Deno.serve(async (req: Request) => {
             word_count: wordCount,
             generation_method: 'openai_gpt4',
             tokens_used: openaiData.usage?.total_tokens || 0,
-            model_used: 'gpt-4'
+            model_used: 'gpt-4',
+            api_key_source: apiKeySource
           },
-          message: "Content generated successfully using OpenAI GPT-4 with complete brand voice integration"
+          message: `Content generated successfully using OpenAI GPT-4 with ${apiKeySource === 'user_personal' ? 'your personal' : 'shared system'} API key`
         }),
         {
           headers: {
@@ -474,7 +509,8 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ 
           error: "Failed to generate content with AI",
-          details: openaiError instanceof Error ? openaiError.message : 'Unknown OpenAI error'
+          details: openaiError instanceof Error ? openaiError.message : 'Unknown OpenAI error',
+          api_key_source: apiKeySource
         }),
         {
           status: 500,

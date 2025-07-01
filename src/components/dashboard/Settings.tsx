@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Save, Eye, EyeOff, TestTube } from 'lucide-react';
+import { Save, Eye, EyeOff, TestTube, Key, Shield, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -26,10 +26,12 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
     content_goals: 3,
     wordpress_url: '',
     wordpress_username: '',
-    wordpress_password: ''
+    wordpress_password: '',
+    openai_api_key: ''
   });
   const [saving, setSaving] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [showWordPressPassword, setShowWordPressPassword] = useState(false);
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
 
   useEffect(() => {
@@ -50,7 +52,8 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
         content_goals: wineryProfile.content_goals || 3,
         wordpress_url: wineryProfile.wordpress_url || '',
         wordpress_username: wineryProfile.wordpress_username || '',
-        wordpress_password: wineryProfile.wordpress_password || ''
+        wordpress_password: wineryProfile.wordpress_password || '',
+        openai_api_key: wineryProfile.openai_api_key || ''
       });
     }
   }, [wineryProfile]);
@@ -118,12 +121,17 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
     }
   };
 
+  const validateOpenAIKey = (key: string) => {
+    if (!key) return true; // Empty is allowed
+    return key.startsWith('sk-') && key.length > 20;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600">Manage your business profile and brand voice</p>
+        <p className="text-gray-600">Manage your business profile, brand voice, and API credentials</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -188,10 +196,115 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
           </div>
         </motion.div>
 
-        {/* Brand Voice */}
+        {/* OpenAI API Key */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
+          className="bg-white rounded-xl border border-gray-200 p-6"
+        >
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-600 rounded-lg flex items-center justify-center">
+              <Key className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">OpenAI API Key</h3>
+              <p className="text-sm text-gray-600">Control your AI usage and costs</p>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-start space-x-3">
+              <Shield className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <h4 className="text-blue-800 font-medium text-sm">Why provide your own API key?</h4>
+                <ul className="text-blue-700 text-sm mt-1 space-y-1">
+                  <li>• <strong>Cost Control:</strong> Pay only for what you use</li>
+                  <li>• <strong>Higher Limits:</strong> No usage restrictions</li>
+                  <li>• <strong>Privacy:</strong> Your data stays with your account</li>
+                  <li>• <strong>Performance:</strong> Faster response times</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                OpenAI API Key (Optional)
+              </label>
+              <div className="relative">
+                <input
+                  type={showOpenAIKey ? 'text' : 'password'}
+                  value={formData.openai_api_key}
+                  onChange={(e) => setFormData(prev => ({ ...prev, openai_api_key: e.target.value }))}
+                  className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                    formData.openai_api_key && !validateOpenAIKey(formData.openai_api_key) 
+                      ? 'border-red-300 bg-red-50' 
+                      : 'border-gray-300'
+                  }`}
+                  placeholder="sk-..."
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showOpenAIKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              
+              {formData.openai_api_key && !validateOpenAIKey(formData.openai_api_key) && (
+                <p className="text-red-600 text-xs mt-1">
+                  Invalid API key format. Should start with "sk-" and be at least 20 characters.
+                </p>
+              )}
+              
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-gray-500">
+                  Leave empty to use the shared system API key (with usage limits)
+                </p>
+                <div className="flex items-center space-x-4">
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Get your API key from OpenAI
+                  </a>
+                  <a
+                    href="https://openai.com/pricing"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-xs text-green-600 hover:text-green-700"
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    View pricing
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {formData.openai_api_key && validateOpenAIKey(formData.openai_api_key) && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2">
+                  <Shield className="h-4 w-4 text-green-500" />
+                  <span className="text-green-800 text-sm font-medium">API Key Configured</span>
+                </div>
+                <p className="text-green-700 text-xs mt-1">
+                  Your personal OpenAI API key will be used for all AI content generation.
+                </p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Brand Voice */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.1 }}
           className="bg-white rounded-xl border border-gray-200 p-6"
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Brand Voice</h3>
@@ -244,7 +357,7 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
 
         {/* Vocabulary Guidelines */}
         <motion.div
-          initial={{ opacity: 0, x: -20 }}
+          initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
           className="bg-white rounded-xl border border-gray-200 p-6"
@@ -281,9 +394,9 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
 
         {/* AI Writing Guidelines */}
         <motion.div
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.3 }}
           className="bg-white rounded-xl border border-gray-200 p-6"
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Writing Guidelines</h3>
@@ -331,7 +444,7 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
 
         {/* Content Goals */}
         <motion.div
-          initial={{ opacity: 0, x: -20 }}
+          initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4 }}
           className="bg-white rounded-xl border border-gray-200 p-6"
@@ -362,9 +475,9 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
 
         {/* WordPress Integration */}
         <motion.div
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
+          transition={{ delay: 0.5 }}
           className="bg-white rounded-xl border border-gray-200 p-6"
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">WordPress Integration</h3>
@@ -400,17 +513,17 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
               </label>
               <div className="relative">
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showWordPressPassword ? 'text' : 'password'}
                   value={formData.wordpress_password}
                   onChange={(e) => setFormData(prev => ({ ...prev, wordpress_password: e.target.value }))}
                   className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowWordPressPassword(!showWordPressPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showWordPressPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
@@ -439,7 +552,7 @@ export function Settings({ wineryProfile, onProfileUpdate }: SettingsProps) {
       >
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || (formData.openai_api_key && !validateOpenAIKey(formData.openai_api_key))}
           className="flex items-center px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
         >
           <Save className="h-4 w-4 mr-2" />
